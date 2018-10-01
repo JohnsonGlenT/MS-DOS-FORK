@@ -1,0 +1,67 @@
+INSTRUCTIONS FOR BUILDING GNUFDISK
+==================================
+
+This document explains how to build the gnufdisk package from source code.
+
+Gnufdisk package depends on other packages, some of these are mandatory
+others are optional. Required packages are: 
+  
+  * guile 
+    
+    Go to http://www.gnu.org/software/guile/guile.html and follow help.
+
+Optional packages are:
+
+
+BUILD FROM REPOSITORY SOURCE
+----------------------------
+
+After downloading the source code from the repository you need to rebuild the
+configuration files. To do this run autoreconf:
+
+  user@localhost:~/gnufdisk$ autoreconf
+
+This command will run aclocal, automake, autoconf, etc.. 
+Do not worry if you see a lot of messages, they are just notifications.
+
+Now that you have the files you can run `configure'. I personally prefer to
+start the configuration with some preset variables. In detail, I use these flags:
+
+  * CPPFLAGS='-DGNUFDISK_DEBUG' 
+
+    This flag causes the macro GNUFDISK_DEBUG be defined. 
+    This macro enables support for debugging in gnufdisk.
+
+  * CFLAGS='-g -ggdb -gdwarf-2 -Wall'
+
+    These flags enable the debugging support into the compiled code (including
+    extensions of GNU gdb) and enable all kinds of warning of gcc.
+
+So the command to configure the package:
+
+  user@localhost:~/gnufdisk$ CPPFLAGS='-DGNUFDISK_DEBUG' \
+    CFLAGS='-g -ggdb -gdwarf-2 -Wall' ./configure
+
+Now that the package is configured, you can compile it by running make:
+
+  user@localhost:~/gnufdisk$ make
+
+Now that the package is built and running you can decide to install it. If you
+want to install the package into your computer you must run the command 
+`make install' as root:
+
+  user@localhost:~/gnufdisk$ sudo make install
+  [sudo] password for user: 
+  
+If you want to improve the package gnufdisk you can start by reading the documentation.
+To build the reference guide you can run the command `make doc', `make pdf', `make html' and so on:
+
+  user@localhost:~/gnufdisk$ make doc
+
+Happy hacking! :)
+
+BUILD FROM PACKAGE
+------------------
+
+See `INSTALL'.
+

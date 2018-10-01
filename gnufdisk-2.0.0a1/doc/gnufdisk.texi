@@ -1,0 +1,2589 @@
+\input texinfo
+
+@c %**start-of-header
+@setfilename gnufdisk
+@settitle GNU FDISK SPECIFICATION
+@paragraphindent 0
+@c %**end-of-header
+
+@include version.texi
+
+@titlepage
+@title GNU FDISK
+@subtitle Reference manual (updated @value{UPDATED})
+@author Christian Brunello
+@end titlepage
+
+@setchapternewpage odd
+
+@ifnottex
+@node Top, Introduction, (dir), (dir)
+@top Gnufdisk specification
+@end ifnottex
+
+@menu
+* Introduction::                
+* Using gnufdisk::              
+* Preparing your system::       
+* gnufdisk-common library::     
+* gnufdisk-debug library::      
+* gnufdisk-exception library::  
+* gnufdisk-device library::     
+* gnufdisk-devicemanager library::  
+* gnufdisk-userinterface library::  
+* Scheme shell::                
+* Backend API::                 
+* Functions index::             
+* Type index::                  
+* Variable index::              
+
+@detailmenu
+ --- The Detailed Node Listing ---
+
+Using gnufdisk
+
+* Invoking::                    
+* shell interface::             
+
+gnufdisk-common library
+
+* Page fault handling::         
+* Strings::                     
+* Stacks::                      
+
+gnufdisk-debug library
+
+* Log messages::                
+* Warning messages::            
+* gnufdisk-debug example::      
+
+gnufdisk-exception library
+
+* Throw::                       
+* Throw handlers::              
+* Blocking exceptions continue or jump back::  
+* Unwind handlers::             
+* Catch::                       
+* End try/catch context::       
+* gnufdisk-exception example::  
+
+gnufdisk-device library
+
+* Error reporting::             
+* Geometries::                  
+* Devices::                     
+* Disklabels::                  
+* Partitions::                  
+* gnufdisk-device example::     
+
+Backend API
+
+* Backend example::             
+
+@end detailmenu
+@end menu
+
+@contents
+
+@node Introduction, Using gnufdisk, Top, Top
+@unnumbered Introduction
+
+With this document we want to explain how we organized the source code
+of GNU Fdisk.
+
+When we designed this new version we had one rule in mind: the development
+of a new graphical interface and a new backend should be easy. To
+do this we have organized the code into several components. Each one
+of these components provides a well defined interface, but hides the
+implementation. In this way each component can be modified and  others
+are not affected.
+
+In later chapters we will examine all these components, explaining what
+is their role, and how it was implemented. Most of the source code
+is written in C language, some parts are written in Scheme. In this
+document we assume you're familiar with these languages.
+
+@node Using gnufdisk, Preparing your system, Introduction, Top
+@chapter Using gnufdisk
+
+@menu
+* Invoking::                    
+* shell interface::             
+@end menu
+
+@node Invoking, shell interface, Using gnufdisk, Using gnufdisk
+@section Invoking
+
+@code{gnufdisk} is a small executable that takes care of loading the 
+implementation that you want, with the options you specified. 
+The model of control to start gnufdisk is as follows:
+
+@verbatim
+gnufdisk IMPLEMENTATION [ ARGUMENTS ]
+@end verbatim
+
+In this model, @var{IMPLEMENTATION} means the user interface that you want to use. 
+@var{ARGUMENTS} indicates the parameters that you want to provide to this interface.
+
+User interfaces are separate modules, are not part of the @code{gnufdisk} program, 
+so you can only use interfaces that you have installed on your system. 
+The only interface included in the program is @code{shell}.
+
+@node shell interface,  , Invoking, Using gnufdisk
+@section shell interface
+
+The @code{shell} interface allows you to use the gnufdisk scheme interpreter interactively.
+If you run gnufdisk selecting this interface, you'll be shown the guile prompt:
+
+@example
+~/$ gnufdisk shell
+guile> 
+@end example
+
+In this mode you can work on devices interactively, using the language scheme.
+@xref{Scheme shell}.
+
+@node Preparing your system, gnufdisk-common library, Using gnufdisk, Top
+@chapter Preparing your System
+
+To develop GNU fdisk we have used various tools from the GNU project. 
+In this chapter we e
+
+@node gnufdisk-common library, gnufdisk-debug library, Preparing your system, Top
+@chapter gnufdisk-common library
+
+In this library there are functions for general use. This library is used by all the others.
+
+@menu
+* Page fault handling::         
+* Strings::                     
+* Stacks::                      
+@end menu
+
+@node Page fault handling, Strings, gnufdisk-common library, gnufdisk-common library
+@section Page fault handling
+Many times it happens that a pointer contains an invalid address. In
+these cases not enough to check if its value is @code{NULL}. Values such
+as @code{0x01}, @code{0x64} and @code{0x345} are not equal to @code{NULL},
+but if we try to access these addresses, our program will terminate 
+with a @code{SIGSEGV} signal. The following function allows 
+us to check if an address is valid:
+
+@deftypefun {int} {gnufdisk_check_memory} ( void *@var{address}, size_t @var{size}, int @var{readonly} )
+This function checks if the memory area from @var{address} to 
+@var{address} + @var{size} is accessible for reading. 
+If the parameter @var{readonly} is not zero, then this function checks if we have write access.
+
+On success this function returns @code{0}. If an error occurs, this function returns
+@code{-1} and @var{errno} is set with the error code.
+@end deftypefun
+
+There are cases where we do not know in advance which addresses are
+used. Examples of these cases are the functions with variable number of
+arguments. For these cases, the library provides the following functions:
+
+@deftypefun {int} {gnufdisk_vfprintf} ( FILE* @var{stream}, const char *@var{format}, va_list @var{args} )
+This function behaves like @code{vfprintf}, capturing any @code{SIGSEGV} signal. On success
+this function returns the number of bytes printed. If an error occurs the function returns -1 
+and errno is set with the appropriate code.
+@quotation Note
+If the function captures a @code{SIGSEGV} signal, the output is undefined.
+@end quotation
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_vasprintf} (char **@var{dest}, const char *@var{format}, va_list @var{args} )
+This function behaves like @code{vasprintf}, capturing any @code{SIGSEGV} signal. On success
+this function returns the number of bytes printed. If an error occurs the function returns -1 
+and errno is set with the appropriate code.
+@end deftypefun
+
+@node Strings, Stacks, Page fault handling, gnufdisk-common library
+@section Strings
+This library includes some functions for string
+handling. The strings are represented with the structure 
+@code{struct gnufdisk_string}. This structure is hidden, 
+you can use it only throught pointers and related functions:
+
+@deftypefun {struct gnufdisk_string*} {gnufdisk_string_new} ( const char* @var{format}, @var{...} )
+This function allocates a new string and sets its content in accordance
+with the format @var{format} (and its arguments).
+
+On success the function returns the pointer to the new string. If an error
+occurs the function returns @code{NULL} and @var{errno} is set with the error value.
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_string_set} ( struct gnufdisk_string* @var{string}, const char *@var{format}, @var{...} )
+This function sets the contents of @var{string} according with the format
+@var{format} (and it's arguments). 
+
+On success this function returns the length of the string. If
+an error occurs the function returns -1 and the variable @var{errno} is set
+with the error number.
+@quotation Note
+If the function fails, the contents of the string remains unchanged.
+@end quotation
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_string_length} ( struct gnufdisk_string* @var{string} )
+This function returns the length of the string @var{string}. If an error occurs the
+function returns -1 and the variable @var{errno} is set with the error number.
+@end deftypefun
+ 
+@deftypefun {const char*} {gnufdisk_string_c_string} (  struct gnufdisk_string* @var{string}  )
+This function returns a pointer to the string data. If an error occurs the 
+function returns @code{NULL} and sets the variable @var{errno} with the error number.
+@end deftypefun
+
+@deftypefun {char*} {gnufdisk_string_c_string_dup} (  struct gnufdisk_string* @var{string}  )
+This function returns a pointer to the string data. Pointer must be freed with @code{free}. 
+If an error occurs the function returns @code{NULL} and sets the variable @var{errno} with the error number.
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_string_delete} (  struct gnufdisk_string* @var{string}  )
+This function eliminates the string @var{string} and frees all its resources.
+On success the function returns 0. If an error occurs the function
+returns -1 and @var{errno} is set with the error number.
+@end deftypefun
+
+@node Stacks,  , Strings, gnufdisk-common library
+@section Stacks
+
+@deftypefun {struct gnufdisk_stack*} {gnufdisk_stack_new} (  void  )
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_stack_delete} (  struct gnufdisk_stack* @var{stack}  )
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_stack_push} (  struct gnufdisk_stack* @var{stack}, void* @var{data}, size_t @var{size}  )
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_stack_pop} (  struct gnufdisk_stack* @var{stack}, void* @var{dest}, size_t @var{size}  )
+@end deftypefun
+
+@node gnufdisk-debug library, gnufdisk-exception library, gnufdisk-common library, Top
+@chapter gnufdisk-debug library
+
+@menu
+* Log messages::                
+* Warning messages::            
+* gnufdisk-debug example::      
+@end menu
+
+GNU fdisk includes a small library to send messages to the terminal.
+To use this library you must include the file @file{gnufdisk-debug.h}.
+
+@node Log messages, Warning messages, gnufdisk-debug library, gnufdisk-debug library
+@section Log messages
+To send logging messages on the terminal you can use the following macro:
+
+@defmac GNUFDISK_LOG ( @var{arguments} )
+The parameter @var{arguments} is a function-argument-list that should be 
+passed to a print function. The format of these arguments is: 
+(@code{@var{enabled}, @var{format}, @var{args}}).
+
+The parameter @var{enabled} should be a boolean expression. 
+If the evaluation of this expression is true then the message 
+will be printed. Otherwise not.
+
+The parameter @var{format} is a @i{printf-like} format string and
+@var{args} are arguments for this strings.
+@end defmac
+
+Once this macro is called, there are 2 ways to configure logging.
+The first is global, and then enable or disable all messges.
+The second is through the parameter @var{enabled}.
+
+To enable global logging you must define the macro @code{GNUFDISK_DEBUG} 
+while compiling your source. For example, using @file{gcc} you can compile with:
+
+@example
+gcc -DGNUFDISK_DEBUG -c -o @var{source-file.o} @var{source-file.c}
+@end example
+
+To enable or disable logging local to the source you must use the
+parameter @var{enable}. As mentioned above the parameter must be a
+boolean expression. If  the result of this expression is 0 (zero),
+the message is not displayed. For example:
+
+@example
+GNUFDISK_LOG((1, "I  received %d bytes", nbytes));
+GNUFDISK_LOG((0, "prepare to write..."));
+@end example
+
+The first message will be displayed. The second message is not displayed.
+Note that the  double parentheses are necessary. If we omit this
+particular the C preprocessor fails.
+
+If the macro @code{GNUFDISK_DEBUG} is defined and the parameter @var{enable}
+expands to true, the library will print the message in the following format:
+
+@verbatim
+PROCESSID-THREADID:SOURCE:LINENO: MESSAGE
+@end verbatim
+
+@code{PROCESSID} indicates the id of the process that sent the message.
+@code{THREADID} indicates which thread has sent the message. The value is printed as
+a sequence of hexadecimal values. @code{SOURCE} is the source file name and @code{LINENO}
+the number of line where the message is sent.
+
+@node Warning messages, gnufdisk-debug example, Log messages, gnufdisk-debug library
+@section Warning messages
+
+To send warning messages on the terminal you can use the following macro:
+
+@defmac GNUFDISK_WARNING ( @var{format} )
+This macro prints a warning message to @var{stderr}. The message
+is formatted according with the string @var{format}.
+
+The message is printed according to the following schema:
+@verbatim
+*** WARNING *** PROCESSID-THREADID:SOURCE:LINENO: MESSAGE
+@end verbatim
+@end defmac
+
+@node gnufdisk-debug example,  , Warning messages, gnufdisk-debug library
+@section gnufdisk-debug example
+
+In this section we will make an example of how to use the library.
+The sample program will copy a file and use the library to display informations.
+In the second part will show you how to enable and disable logging at global level
+and at local level. What follows is our source code:
+
+@example
+@verbatim
+#include <stdlib.h>
+#include <stdio.h>
+
+/* Get definition of GNUFDISK_LOG */
+#include <gnufdisk-debug.h>
+
+/* We define boolean expressions as calls to getenv,
+ * so that we can enable or disable local logging
+ * using environment variables. */
+#define INFO (getenv("INFO") != NULL)
+#define IO (getenv("IO") != NULL)
+
+int main(int argc, char* argv[])
+{
+  FILE* in;
+  FILE* out;
+  char buf[512];
+  int count;
+
+  GNUFDISK_LOG((INFO, "main: argc=%d, argv=%p", argc, argv));
+
+  if(argc < 3)
+    {
+      fprintf(stderr, "USAGE: mycopy source dest\n");
+      exit(EXIT_FAILURE);
+    }
+
+  if((in = fopen(argv[1], "rb")) == NULL)
+    {
+      perror("fopen");
+      exit(EXIT_FAILURE);
+    }
+
+  GNUFDISK_LOG((INFO, "input stream: %p", in));
+
+  if((out = fopen(argv[2], "wb")) == NULL)
+    {
+      perror("fopen");
+      exit(EXIT_FAILURE);
+    }
+
+  GNUFDISK_LOG((INFO, "output stream: %p", out));
+
+  while((count = fread(buf, 1, sizeof(buf), in)) > 0)
+    {
+      GNUFDISK_LOG((IO, "got %d bytes", count));
+
+      if(fwrite(buf, 1, count, out) != count)
+        {
+          perror("fwrite");
+          exit(EXIT_FAILURE);
+        }
+    }
+
+  GNUFDISK_LOG((INFO, "done copy"));
+
+  fclose(in);
+  fclose(out);
+
+  return EXIT_SUCCESS;
+}
+@end verbatim
+@end example
+
+Now that  we have written the code, we can compile. For this example we
+will build two executables, the first one with debugging enabled at the
+global level, the second  with debugging disabled  globally. We will call
+these two executables @file{mycopy-with-debug} and @file{mycopy-without-debug}.
+Here are  two commands to compile  the two executables:
+
+@example
+gcc -DGNUFDISK_DEBUG -o mycopy-with-debug mycopy.c -lgnufdisk-debug
+gcc -o mycopy-without-debug mycopy.c
+@end example
+
+Note that if the macro @code{GNUFDISK_DEBUG} is not defined, we do
+not need to link our  executable to the library, because it is not
+used. Now that the executables are compiled  we can see their behavior.
+The first executable has debug enabled  globally, then we can enable
+messages using environment variables:
+
+@example
+$ # no log at all:
+$ ./mycopy-with-debug input-file output-file
+$ # enable logging from category INFO:
+$ INFO= ./mycopy-with-debug input-file output-file
+26925-00000000:mycopy.c:20: main: argc=3, argv=0xbfe8fb94
+26925-00000000:mycopy.c:34: input stream: 0x8a19008
+26925-00000000:mycopy.c:42: output stream: 0x8a19170
+26925-00000000:mycopy.c:55: done copy
+$ # enable logging for all categories:
+$ INFO= IO= ./mycopy-with-debug input-file output-file
+26926-00000000:mycopy.c:20: main: argc=3, argv=0xbfcef574
+26926-00000000:mycopy.c:34: input stream: 0x855e008
+26926-00000000:mycopy.c:42: output stream: 0x855e170
+26926-00000000:mycopy.c:46: got 512 bytes
+26926-00000000:mycopy.c:46: got 512 bytes
+26926-00000000:mycopy.c:46: got 512 bytes
+26926-00000000:mycopy.c:46: got 512 bytes
+26926-00000000:mycopy.c:46: got 512 bytes
+26926-00000000:mycopy.c:46: got 512 bytes
+26926-00000000:mycopy.c:46: got 512 bytes
+26926-00000000:mycopy.c:46: got 512 bytes
+26926-00000000:mycopy.c:46: got 512 bytes
+26926-00000000:mycopy.c:46: got 512 bytes
+26926-00000000:mycopy.c:46: got 512 bytes
+26926-00000000:mycopy.c:46: got 512 bytes
+26926-00000000:mycopy.c:46: got 512 bytes
+26926-00000000:mycopy.c:46: got 512 bytes
+26926-00000000:mycopy.c:46: got 335 bytes
+26926-00000000:mycopy.c:55: done copy
+@end example
+
+The second executable has debug disabled globally, even if we try to
+enable messages using environment variables, they will not be displayed:
+
+@example
+$ # no log at all:
+$ ./mycopy-with-debug input-file output-file
+$ # enable logging from category INFO:
+$ INFO= ./mycopy-with-debug input-file output-file
+$ # enable logging for all categories:
+$ INFO= IO= ./mycopy-with-debug input-file output-file
+$
+@end example
+
+When the source code is compiled without defining the macro
+@code{GNUFDISK_DEBUG}, each occurrence of @code{GNUFDISK_LOG} is expanded in an
+empty statement. In this way, we do not have an impact on the speed of
+the program.
+
+@node gnufdisk-exception library, gnufdisk-device library, gnufdisk-debug library, Top
+@chapter gnufdisk-exception library
+
+@menu
+* Throw::                       
+* Throw handlers::              
+* Blocking exceptions continue or jump back::  
+* Unwind handlers::             
+* Catch::                       
+* End try/catch context::       
+* gnufdisk-exception example::  
+@end menu
+
+GNU Fdisk includes a library for exception handling. This library is
+capable of handling exceptions in  multi-threaded applications  in a
+flexible manner.  Exception handling is similar to the one implemented
+in  most modern programming languages where we  try, catch and throw.
+In addition to this we have the ability to block an exception before it
+is raised,  and then continue execution  from where the exception was
+created, or further back (through the  continuation points).  We can
+also record functions  to clean the data before  the stack is cleared,
+get information about the current state, current exception and so on.
+
+In this chapter we will explain how this library works.  Since it is
+not easy,  we begin with a flowchart  and then explain each element. The
+flow chart below explains what happens when an exception is raised:
+
+@sp 1
+@center @image{exception, 297pt, 414pt}
+@sp 1
+
+The following sections will examine the elements of this diagram,
+associating them to the library. All macros and functions are declared
+in the file @file{gnufdisk-exception.h}.
+
+@node Throw, Throw handlers, gnufdisk-exception library, gnufdisk-exception library
+@section Throw
+When an error occurs, and you do not know how to solve it, the
+best choice is to throw an exception and let the error be managed
+at the highest level. To throw an exception you can use the following macro:
+
+@defmac GNUFDISK_THROW ( @var{mode}, @var{retry}, @var{error}, @var{data}, @var{fmt}, @var{...} )
+With this macro you can raise an exception for error @var{error}
+(a signed integer value). You can decide what value to use for this
+parameter, but you can not use the value 0 (zero) because this value
+is reserved to the library.
+
+With the @var{mode} parameter you can decide how this exception should be
+handled. To do this you can use the or operator (@code{|}) and the following
+enumerations:
+
+@table @code
+@item GNUFDISK_EXCEPTION_MANAGEABLE
+The exception can be handled by a function before being reported and
+before the stack is cleared. The handler for this exception will be given
+at a higher level, at the beginning of the try block. You can pass data
+to this  function using the parameter @var{data} (a void pointer). 
+@xref{Throw handlers, Throw handlers}.
+
+@item GNUFDISK_EXCEPTION_LOCKABLE
+The function that handles the exception can stop the error. If this
+happens, the stack is not cleared and execution continues to the next statement
+or jump to a @i{retry-point}. You can indicate a @i{retry-point} using the 
+parameter @var{retry}. @xref{Blocking exceptions, Blocking exceptions}.
+@end table
+
+With the parameter @var{format} you can enter a descriptive message for this error.
+The parameter accepts a @i{printf-like} string. The rest of parameters are those 
+required for the @i{format-string}.
+@end defmac
+
+Once an exception is raised, the library ensures that there is a @i{try}
+context. If there is no context, the thread is finished using
+pthread_kill, and the signal 6 (@code{SIGABORT}).
+
+@node Throw handlers, Blocking exceptions continue or jump back, Throw, gnufdisk-exception library
+@section Throw handlers
+When an exception was raised, the library checks the value
+indicated for the @var{mode} parameter. If you have specified the value
+@code{GNUFDISK_EXCEPTION_MANAGEABLE}, the library checks whether a handler
+has been specified. If this is specified, then calls it. 
+
+@deftp {Type} {gnufdisk_exception_handler}
+This is the type for an exception handler. It's declaration is:
+
+@verbatim
+int gnufdisk_exception_handler ( void * handler_data,
+                                 struct gnufdisk_exception_info *info,
+                                 void *exception_data );
+@end verbatim
+
+The parameter @var{handler_data} is a void pointer. The value of this
+parameter is specified when registering the handler. The parameter
+@var{info} is a pointer to a structure that contains information about
+this exception (see below). The parameter @var{exception_data} is a void
+pointer.  Its value is specified within the macro @code{GNUFDISK_THROW},
+using the parameter @var{data}.
+@end deftp
+
+@anchor{gnufdisk_exception_info}
+@deftp {Type} {struct gnufdisk_exception_info}
+This structure contains information about the  exception. Its members  are:
+@table @code
+@item message
+The error message indicated with the macro @code{GNUFDISK_THROW}.
+@item file
+The  source file name where  this exception was raised.
+@item line
+The line number where this exception was raised.
+@item error
+The error associated with this exception (the value given for parameter
+@var{error} of @code{GNUFDISK_THROW})
+@end table
+@end deftp
+
+If you want to specify an exception handler, you must do when starting
+a @i{try} context, using the following macro:
+
+@defmac GNUFDISK_TRY ( @var{handler}, @var{handler_arg} )
+This macro begins a context where you can manage exceptions. The
+parameter @var{handler} is a  pointer to a function that manage the
+error before it is reported. The parameter @var{handler_arg} 
+is a @code{void} pointer. You can use it to pass 
+data to the @var{handler}.
+@end defmac
+
+@node Blocking exceptions continue or jump back, Unwind handlers, Throw handlers, gnufdisk-exception library
+@section Blocking exceptions continue or jump back
+@anchor{Blocking exceptions}
+If  you are able to fix an error in an exception handler, you can tell
+the library that the error was resolved. To do this you must return
+a zero value from the exception handler. In this case, the library
+checks whether the exception can be blocked. If the exception can be
+blocked then the execution continues  from where it was raised (or more
+back if you specified a @i{retry-point}).
+
+To indicate a @i{retry-point} you have to use a variable, set it to the
+location where you want to jump and indicate it as a parameter @var{retry}
+when using the macro @code{GNUFDISK_THROW}. To declare and set a @i{retry-point}
+you can use the following macros:
+
+@deftp {Type} GNUFDISK_RETRY
+This  allows you to declare  a variable where you can  jump back.
+@end deftp
+
+@defmac GNUFDISK_RETRY_SET ( @var{retry} )
+With  this macro you can set  a location to jump back. The parameter 
+@var{retry} should be a variable of type @code{GNUFDISK_RETRY}.
+@end defmac
+
+You can have multiple @code{GNUFDISK_RETRY} variables, but you can only
+use one for each call to @code{GNUFDISK_THROW}. The retry mechanism is
+similar to a @code{goto} statement, but it is not a label. Unlike the labels
+you can get the address of a @i{retry-point} variable and pass it to a
+function. This function can throw an exception using this variable and, 
+if this exception is resolved, execution jumps to where you've set the jump.
+
+@node Unwind handlers, Catch, Blocking exceptions continue or jump back, gnufdisk-exception library
+@section Unwind handlers
+You can register functions that must be called before cleaning the
+stack.  We call these functions @i{unwind-handlers} because they are run
+just prior to clean up the stack and move the execution at the first properly
+catch block. To register/unregister handlers you must use the following functions:
+
+@deftypefun {int} {gnufdisk_exception_register_unwind_handler} (  void (*@var{handler})(void *), void *@var{data}  )
+This function registers an @i{unwind-handler}. The parameter @var{handler} is
+the pointer to the function you want to register. The parameter @var{data}
+is the argument you want passed to the function.
+
+The  return value is 0 (zero) if the handler was registered. If  an error occurs
+the function returns -1 and @var{errno} is set to error number.
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_exception_unregister_unwind_handler} (  void (*@var{handler})(void *), void *@var{data}  )
+This function allows to remove an handler from a @i{try} context. The
+parameters @var{handler} and @var{data} must be the same as you entered when
+you registered the handler.
+
+The  return value is 0 (zero) if the handler was removed. If an error
+occurs the function returns -1 and @var{errno} is set to error number.
+@end deftypefun
+
+You can register more than one handler, they are called in reverse
+order. Each handler will be called with its argument.
+
+@node Catch, End try/catch context, Unwind handlers, gnufdisk-exception library
+@section Catch
+
+When an exception occurs and this is not blocked, the library calls the
+registered handlers, cleans up the stack and then move code execution
+on an appropriate catch block. To insert one  or more catch blocks you
+must use the following macros:
+
+@defmac GNUFDISK_CATCH ( @var{error} )
+This macro indicates a statement (or a block of statements)
+prepared to handle the error @var{error}. The parameter @var{error} is an
+integer id for the type of exception.
+@end defmac
+
+@defmac GNUFDISK_CATCH_DEFAULT
+This macro indicates a set of instructions to be executed 
+if the exception was not handled.
+@end defmac
+
+Within each catch block you can use the variable
+@var{exception_info}. @vindex exception_info 
+This variable is an automatic
+variable, local to the  catch block. For more information about the
+type of this variable @xref{gnufdisk_exception_info, @code{struct
+gnufdisk_exception_info}}.
+
+@node End try/catch context, gnufdisk-exception example, Catch, gnufdisk-exception library
+@section End try/catch context
+
+At the end of a try/catch block should be a call to the macro @code{GNUFDISK_EXCEPTION_END}.
+This macro has the following format:
+
+@defmac GNUFDISK_EXCEPTION_END
+The macro @code{GNUFDISK_EXCEPTION_END} indicates the end of a context
+where you can manage exceptions.  If there are unhandled exceptions, they
+will be raised at the highest level.  If no one handles these exceptions,
+the thread will be terminated.
+@end defmac
+
+Then  the template to handle  exceptions using this library is as follows:
+
+@example
+GNUFDISK_TRY ( @var{handler}, @var{handler_arg} )
+  @{
+    /* Code where exceptions can be raised */
+  @}
+[ GNUFDISK_CATCH ( @var{error} )
+  @{
+    /* Codet to manage error @var{error} */
+  @} ]
+[ GNUFDISK_CATCH_DEFAULT
+  @{
+    /* Default code to manage exceptions */
+  @} ]
+GNUFDISK_EXCEPTION_END;
+@end example
+
+The call to @code{GNUFDISK_TRY} is mandatory. It prepares a new
+environment where you can  catch exceptions.  Following this macro
+there may be a series of @code{GNUFDISK_CATCH}, one for each error. If
+you want, you can place a call to @code{GNUFDISK_CATCH_DEFAULT}
+to handle uncaught exception. At the end there must be a call to
+@code{GNUFDISK_EXCEPTION_END}. This is also mandatory, is used to control
+the final state of the context and to release the allocated memory.
+
+@node gnufdisk-exception example,  , End try/catch context, gnufdisk-exception library
+@section gnufdisk-exception example
+
+In this section we will make an example using the library gnufdisk-exception.
+
+The sample program will try to open a socket listening on port 953 and
+use the library to signal errors. If the @code{bind} fails,
+we use a @i{throw-handler} to resolve the error, and a @i{retry-point} variable
+to resume operation. The following is sample code:
+
+@example
+@verbatim
+#include <errno.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <errno.h>
+#include <stdint.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+
+#include <gnufdisk-debug.h>
+#include <gnufdisk-exception.h>
+
+/* define macros for GNUFDISK_LOG */
+#define ERROR (getenv("ERROR") != NULL)
+#define INFO (getenv("INFO") != NULL)
+
+/* This is our throw-handler */
+static int
+throw_handler (void *_udata, 
+               struct gnufdisk_exception_info *_info,
+               void *_edata)
+{
+  GNUFDISK_LOG ((ERROR,
+                 "handle exception from %s:%d error %d (%s)",
+                 _info->file,
+                 _info->line, 
+                 _info->error, 
+                 strerror (_info->error)));
+
+  switch (_info->error)
+    {
+    case EACCES:
+    case EADDRINUSE:
+      {
+        /* We assume that the port is busy. We ask you
+           to enter a new port or 'q' to quit. */
+  
+        char buf[32];
+        struct sockaddr_in *name;
+        uint16_t new_port;
+
+        memset (buf, 0, sizeof (buf));
+        name = _edata;
+        new_port = ntohs (name->sin_port);
+        printf ( "cannot bind socket on port %hu"
+                 ", type another port or q to quit: ",
+                 new_port );
+
+        fflush (stdout);
+
+        if (scanf ("%31s", buf) < 1 || strchr (buf, 'q') != NULL)
+          return -1;
+
+        new_port = atoi (buf);
+
+        name->sin_port = htons (new_port);
+
+        return 0; /* block the exception */
+      }
+   }
+
+  return -1; /* let the exception continue */
+}
+
+static int create_socket(uint16_t _port)
+{
+  int sock;
+  struct sockaddr_in name;
+
+  GNUFDISK_RETRY r1; /* retry point variable */
+
+  GNUFDISK_LOG((INFO, "create socket on port %hu", _port));
+
+  /* Create the socket. */
+  sock = socket (PF_INET, SOCK_STREAM, 0);
+ 
+  /* On failure we raise an exception. This exception 
+     is not manageable, an then not lockable */ 
+
+  if (sock < 0)
+    GNUFDISK_THROW(0, NULL, errno, NULL, "cannot create socket");
+
+  /* bind socket */
+  name.sin_family = AF_INET;
+  name.sin_port = htons (_port);
+  name.sin_addr.s_addr = htonl (INADDR_ANY);
+  
+  GNUFDISK_RETRY_SET(r1); /* set the retry point */
+
+  /* On failure we raise an exception. Exception is manageable
+     and lockable. Use retry point `r1' and pass the variable `name'
+     as exception data. */
+
+  if (bind (sock, (struct sockaddr *) &name, sizeof (name)) < 0)
+    GNUFDISK_THROW(GNUFDISK_EXCEPTION_MANAGEABLE
+                     |GNUFDISK_EXCEPTION_LOCKABLE,
+                   &r1,
+                   errno,
+                   &name,
+                   "cannot bind socket on port %hd", 
+                   ntohs(name.sin_port));
+
+  return sock;
+}
+
+/* unwind handler to free a pointer */
+static void cleanup_memory(void* _p)
+{
+  GNUFDISK_LOG((ERROR, "free memory %p", _p));
+  free(_p);
+}
+
+/* unwind handler to close a socket */
+static void close_socket(void* _p)
+{
+  GNUFDISK_LOG((ERROR, "close socket %p", _p));
+
+  close(*(int*) _p);
+}
+
+int main(int argc, char* argv[])
+{
+  int ret;
+
+  /* begin a try context using `throw_handler' as throw-handler 
+     pass NULL as handler data */
+  GNUFDISK_TRY(&throw_handler, NULL)
+    {
+      char* buf;
+      int sock;
+
+      /* On failure raise an exception. 
+         Exception is not manageable and not lockable */
+      if((buf = malloc(1024)) == NULL)
+        GNUFDISK_THROW(0, 
+                       NULL, 
+                       errno, 
+                       NULL, 
+                       "cannot allocate memory");
+
+      /* register an unwind handler to free buf */
+      gnufdisk_exception_register_unwind_handler(&cleanup_memory, buf);
+
+      /* here we can have some exceptions */
+      sock = create_socket(953);
+
+      /* registers an unwind handler to close the socket */
+      gnufdisk_exception_register_unwind_handler(&close_socket, &sock);
+
+      /* continue */
+     
+      /* if we walk here, there isn't exceptions 
+         so we can close an cleanup explicitly */ 
+      close(sock);    
+      free(buf);
+
+      ret = EXIT_SUCCESS;
+    }
+  GNUFDISK_CATCH_DEFAULT
+    {
+      fprintf(stderr,
+              "caught an exception from %s:%d: %s\n",
+              exception_info.file,
+              exception_info.line,
+              exception_info.message);
+      ret = EXIT_FAILURE;
+    }
+  GNUFDISK_EXCEPTION_END; /* end of exception context */
+
+  return ret;
+}
+@end verbatim
+@end example
+
+Now that the code is written, we can compile and test our example:
+We compile using gcc, and enable debugging at all levels:
+
+@example
+@verbatim
+~$ gcc -o exception -DGNUFDISK_DEBUG exception.c \
+    -lgnufdisk-debug -lgnufdisk-exception
+~$ INFO= ERROR= ./exception
+26350-c0061b40:exception.c:72: create socket on port 953
+26350-c0061b40:exception.c:29: handle exception from \
+    exception.c:93 error 13 (Permission denied)
+cannot bind socket on port 953, type another port or q to quit: 80
+26350-c0061b40:exception.c:29: handle exception \
+    from exception.c:93 error 13 (Permission denied)
+cannot bind socket on port 80, type another port or q to quit: 98
+26350-c0061b40:exception.c:29: handle exception from \
+    exception.c:93 error 13 (Permission denied)
+cannot bind socket on port 98, type another port or q to quit: 20
+26350-c0061b40:exception.c:29: handle exception from \
+    exception.c:93 error 13 (Permission denied)
+cannot bind socket on port 20, type another port or q to quit: q
+26350-c0061b40:exception.c:100: free memory 0x9450058
+caught an exception from exception.c:93: cannot bind socket on port 20
+~$
+@end verbatim
+@end example
+
+As we can see from the logs, it was not possible to bind  using port
+953. At this point there was an exception and the @i{throw-handler} has asked to
+enter a new port. The user selects the port number 80, and the exception
+has been blocked. This was repeated for port 80, 98 and 20, until the
+user has decided to quit. This time the exception was not locked. The
+library has called the @code{cleanup_memory}, and the execution has moved
+to the catch block.
+
+@node gnufdisk-device library, gnufdisk-devicemanager library, gnufdisk-exception library, Top
+@chapter gnufdisk-device library
+
+@menu
+* Error reporting::             
+* Geometries::                  
+* Devices::                     
+* Disklabels::                  
+* Partitions::                  
+* gnufdisk-device example::     
+@end menu
+
+As we said at the beginning of this document, the new version of GNU
+fdisk has been built to make easier the implementation of new @i{back-end}.
+With the library @i{gnufdisk-device}  we offer the possibility  to
+use different implementations having the same interface. In addition, 
+this library is responsible for checking that data is reliable,
+and resume the operation when an error occurs. 
+
+In this chapter we will examine the functions and structures
+exported by this library. All public functions are declared
+in the file @file{gnufdisk-device.h}, private functions in the file
+@file{gnufdisk-device-internals.h}.
+
+@node Error reporting, Geometries, gnufdisk-device library, gnufdisk-device library
+@section Error reporting
+
+Any error that occurs in this library is signaled by an exception. The
+type of error is indicated  by an integer value, specific data is
+provided through a union. Below is the list of errors:
+
+@table @code
+@item GNUFDISK_DEVICE_EMODULEPOINTER
+Invalid @code{struct gnufdisk_string} pointer (address is not valid).
+@item GNUFDISK_DEVICE_EMODULE
+Invalid module name (module not found).
+@item GNUFDISK_DEVICE_EGEOMETRYLENGTH
+Invalid geometry length (less than or equal to 0).
+@item GNUFDISK_DEVICE_EGEOMETRYPOINTER
+Invalid @code{struct gnufdisk_geometry} pointer (address is not valid).
+@item  GNUFDISK_DEVICE_EGEOMETRY
+Invalid geometry (start and/or end are not valid).
+@item  GNUFDISK_DEVICE_EDEVICEPOINTER,
+Invalid @code{struct gnmufdisk_device} pointer (address is not valid).
+@item  GNUFDISK_DEVICE_EDEVICE
+Invalid device (internal values are not valid)
+@item  GNUFDISK_DEVICE_EDISKLABELPOINTER
+Invalid @code{struct gnufdisk_disklabel} pointer (address is not valid).
+@item  GNUFDISK_DEVICE_EDISKLABEL
+Invalid disklabel (internal values are not valid).
+@item  GNUFDISK_DEVICE_EPARTITIONPOINTER
+Invalid @code{struct gnufdisk_partition} pointer (address is not valid).
+@item  GNUFDISK_DEVICE_EPARTITION
+Invalid partition (internal values are not valid).
+@item GNUFDISK_DEVICE_EPARTITIONNUMBER
+Partition number out of range.
+@item  @i{GNUFDISK_DEVICE_ENOTSUP}
+Operation not supported.
+@item  GNUFDISK_DEVICE_EPATHPOINTER
+Invalid @code{struct gnufdisk_string} pointer (address is not valid).
+@item  GNUFDISK_DEVICE_EPATH
+Invalid device path (device is not accessible).
+@item  GNUFDISK_DEVICE_EDESTINATIONPOINTER
+Invalid destination pointer (address is not valid).
+@item  GNUFDISK_DEVICE_ESIZEPOINTER
+Invalid size pointer (address is not valid).
+@item  GNUFDISK_DEVICE_EDISKLABELSYSTEMPOINTER
+Invalid @code{struct gnufdisk_string} pointer (address is not valid).
+@item  GNUFDISK_DEVICE_EDISKLABELSYSTEM
+Invalid disklabel system (type is unknown).
+@item  GNUFDISK_DEVICE_EPARTITIONTYPEPOINTER
+Invalid @code{struct gnufdisk_string} pointer (address is not valid).
+@item  GNUFDISK_DEVICE_EPARTITIONTYPE
+Invalid partition type (type is unknown).
+@item  GNUFDISK_DEVICE_EPARAMETERPOINTER
+Invalid @code{struct gnufdisk_string} pointer (address is not valid).
+@item GNUFDISK_DEVICE_EPARAMETER
+Invalid parameter (unknown by implementation).
+@item  GNUFDISK_DEVICE_EPARAMETERDATA
+Invalid parameter pointer (address is not valid).
+@item  GNUFDISK_DEVICE_EPARAMETERSIZE
+Unexpected parameter size.
+@item  GNUFDISK_DEVICE_EREADBUFFER
+Invalid read buffer (address is not valid).
+@item  GNUFDISK_DEVICE_EWRITEBUFFER
+Invalid write buffer (address is not valid).
+@item  GNUFDISK_DEVICE_EINTERNAL
+Internal error.
+@item GNUFDISK_DEVICE_ENOTOPEN
+Device is not open.
+@item GNUFDISK_DEVICE_EIO
+Lov level I/O error.
+@end table
+
+Many of these errors can be resolved through a @i{throw-handler}. Errors
+that can not be resolved are not manageable by the handler
+(they are not reported using the mode @code{GNUFDISK_EXCEPTION_MANAGEABLE}).
+
+Each error is reported along with its data. For example, the
+error @code{GNUFDISK_DEVICE_EGEOMETRY} is accompanied by a pointer to
+the geometry. The error data are always passed through the @code{union
+gnufdisk_device_exception_data}:
+
+@verbatim 
+union gnufdisk_device_exception_data {
+  struct gnufdisk_string** emodulepointer;
+  struct gnufdisk_string* emodule;
+  struct gnufdisk_string** edisklabelsystempointer;
+  struct gnufdisk_string* edisklabelsystem;
+  struct gnufdisk_string** epartitiontypepointer;
+  struct gnufdisk_string* epartitiontype;
+  size_t* epartitionnumber;
+  struct gnufdisk_string** epathpointer;
+  struct gnufdisk_string* epath;
+  void*** edestinationpointer;
+  size_t ** esizepointer;
+  gnufdisk_integer* egeometrylength;
+  struct gnufdisk_geometry** egeometrypointer;
+  struct gnufdisk_geometry* egeometry;
+  struct gnufdisk_device** edevicepointer;
+  struct gnufdisk_disklabel** edisklabelpointer;
+  struct gnufdisk_partition** epartitionpointer;
+  void **ereadbuffer;
+  void **ewritebuffer;
+  struct gnufdisk_device* enotopen;
+};
+@end verbatim
+
+Each element of this structure corresponds to an error. You can
+correct the data  and lock the exception, then the library will resume
+the operation. If the values are incorrect the exception
+will be reported again. Here's an example:
+
+@example
+@verbatim
+static int throw_handler(void* _hdata, 
+  struct gnufdisk_exception_info* _info, void* _edata)
+{
+  union gnufdisk_device_exception_data* exception_data;
+
+  exception_data = _edata;
+
+  if(_info->error == GNUFDISK_DEVICE_EGEOMETRYLENGTH)
+    {
+      *exception_data.egeometrylength = 1;
+      return 0; /* lock the exception */
+    }
+
+  return -1; /* let the exception continue */
+}
+@end verbatim
+@end example
+
+This way you can handle any error. If you do not manage the error the
+operation will be canceled.
+
+@node Geometries, Devices, Error reporting, gnufdisk-device library
+@section Geometries
+
+In this library, the geometry of disk is represented by the structure 
+@code{struct gnufdisk_geometry}. In this structure, the positions 
+are represented in logical sectors.
+
+This structure is not public, you can use it only through pointers. To
+create/destroy variables of this type you can use the following
+functions:
+
+@deftypefun {struct gnufdisk_geometry*} @
+  {gnufdisk_geometry_new} @
+  ( struct gnufdisk_device* @var{device} )
+This function allocates a new geometry. The parameter @var{device}
+indicates the device to which this geometry refers. This is necessary
+for the alignment and size restrictions. 
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EDEVICEPOINTER
+@item GNUFDISK_DEVICE_EDEVICE
+@item GNUFDISK_COMMON_ENOMEM
+@end table
+@end quotation
+@end deftypefun
+
+@deftypefun {void} @
+  {gnufdisk_geometry_delete} @
+  ( struct gnufdisk_geometry* @var{geometry} )
+This function destroys and frees the memory allocated for geometry
+@var{geometry}. 
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EGEOMETRYPOINTER
+@item GNUFDISK_DEVICE_EDEVICEPOINTER
+@item GNUFDISK_DEVICE_EDEVICE
+@end table
+@end quotation
+@end deftypefun
+
+Once you have allocated a variable, you can set its value.
+The values of a geometry can be expressed through logical sectors or
+@i{CHS} values. To put a value through a chs triplet, you
+can use the following structure:
+@deftp {Structure} {struct gnufdisk_chs}
+This structure is used to indicate geometric values
+through a triple (cylinder, head, sector), its definition is
+as follows:
+@verbatim
+struct gnufdisk_chs {
+  gnufdisk_integer cylinder;
+  gnufdisk_integer head;
+  gnufdisk_integer sector;
+};
+@end verbatim
+@end deftp
+
+To set/get geometry values, you can use the following functions:
+
+@deftypefun {struct gnufdisk_geometry*} {gnufdisk_geometry_set} ( struct gnufdisk_geometry *@var{geometry}, @
+     gnufdisk_integer @var{start}, @
+     gnufdisk_integer @var{length} )
+This function sets the geometry @var{geometry} with the values
+@var{start} and @var{length}. On success return @var{geometry}.
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EGEOMETRYPOINTER
+@item GNUFDISK_DEVICE_EDEVICEPOINTER
+@item GNUFDISK_DEVICE_EGEOMETRYLENGTH
+@end table
+@end quotation
+@end deftypefun
+
+@deftypefun {struct gnufdisk_geometry*} {gnufdisk_geometry_set_chs} ( struct gnufdisk_geometry *@var{geometry}, @
+     struct gnufdisk_chs @var{start}, @
+     struct gnufdisk_chs @var{length} )
+This function is similar to the previous one, but the values are
+indicated by chs triplets.
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EGEOMETRYPOINTER
+@item GNUFDISK_DEVICE_EDEVICEPOINTER
+@item GNUFDISK_DEVICE_EGEOMETRYLENGTH
+@end table
+@end quotation
+@end deftypefun
+
+@deftypefun {gnufdisk_integer} {gnufdisk_geometry_start} (  struct gnufdisk_geometry*  )
+This function returns the start sector from @var{geometry}. 
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EGEOMETRYPOINTER
+@item GNUFDISK_DEVICE_EDEVICEPOINTER
+@end table
+@end quotation
+@end deftypefun
+
+@deftypefun {struct gnufdisk_chs} {gnufdisk_geometry_start_chs} (  struct gnufdisk_geometry*  )
+This function is similar to the previous one, but the value is returnet throught a chs triplet.
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EGEOMETRYPOINTER
+@item GNUFDISK_DEVICE_EDEVICEPOINTER
+@end table
+@end quotation
+@end deftypefun
+
+@deftypefun {gnufdisk_integer} {gnufdisk_geometry_end} (  struct gnufdisk_geometry*  )
+This function returns the end sector from @var{geometry}. 
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EGEOMETRYPOINTER
+@item GNUFDISK_DEVICE_EDEVICEPOINTER
+@end table
+@end quotation
+@end deftypefun
+
+@deftypefun {struct gnufdisk_chs} {gnufdisk_geometry_end_chs} (  struct gnufdisk_geometry*  )
+This function is similar to the previous one, but the value is returnet throught a chs triplet.
+@end deftypefun
+
+@deftypefun {gnufdisk_integer} {gnufdisk_geometry_length} (  struct gnufdisk_geometry*  )
+This function returns the lenght of @var{geometry} in sectors. 
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EGEOMETRYPOINTER
+@item GNUFDISK_DEVICE_EDEVICEPOINTER
+@end table
+@end quotation
+@end deftypefun
+
+@deftypefun {struct gnufdisk_chs} {gnufdisk_geometry_length_chs} (  struct gnufdisk_geometry*  )
+This function is similar to the previous one, but the value is returnet throught a chs triplet.
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EGEOMETRYPOINTER
+@item GNUFDISK_DEVICE_EDEVICEPOINTER
+@end table
+@end quotation
+@end deftypefun
+
+@node Devices, Disklabels, Geometries, gnufdisk-device library
+@section Devices
+
+In this library devices are represented through the structure
+@code{gnufdisk_device}. This structure is hidden, you can use it only
+through pointers.
+
+To create or destroy @code{struct gnufdisk_device} variables, 
+you can use the following functions:
+
+@deftypefun {struct gnufdisk_device*} {gnufdisk_device_new} ( struct gnufdisk_string* @var{module}, @
+  struct gnufdisk_string* @var{options} )
+
+With this function you can create a new variable of type @code{struct gnufdisk_device}.
+The parameter @var{module} indicates which implementation
+you want to use for this variable. The parameter @var{options} means options
+that you specify for this implementation. @xref{Backend API}.
+
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EMODULEPOINTER
+@item GNUFDISK_DEVICE_EMODULE
+@item GNUFDISK_COMMON_ENOMEM
+@end table
+@end quotation
+@end deftypefun
+
+@deftypefun {void} {gnufdisk_device_delete} (  struct gnufdisk_device* @var{device}  )
+This function destroys the variable @var{device} and frees all allocated
+resources. Once destroyed, this variable is no longer usable.
+
+@quotation Exceptions:
+@table @code
+@item GNUFDISK_DEVICE_EDEVICEPOINTER
+@item GNUFDISK_DEVICE_EDEVICE
+@end table
+@end quotation
+@end deftypefun
+
+Once a variable has been allocated, you can perform operations on it
+using the following functions:
+
+@deftypefun {void} {gnufdisk_device_ref} (  struct gnufdisk_device* @var{device}  )
+This function adds a reference to the variable @var{device}. Even if someone
+tries to destroy it, the variable remains allocated as long as you do
+not destroy it.
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EDEVICEPOINTER
+@item GNUFDISK_DEVICE_EDEVICE
+@end table
+@end quotation
+@end deftypefun
+
+@deftypefun {void} {gnufdisk_device_open} (  struct gnufdisk_device* @var{device}, struct gnufdisk_string* @var{path}  )
+This function binds the variable @var{device} variable to the file @var{path} (usually a device). After
+calling this function, you can begin to perform operations on this
+device. 
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EDEVICEPOINTER
+@item GNUFDISK_DEVICE_EDEVICE
+@item GNUFDISK_DEVICE_EPATHPOINTER
+@item GNUFDISK_DEVICE_ENOTSUP
+@end table
+@end quotation
+@end deftypefun
+
+@deftypefun {struct gnufdisk_disklabel *} {gnufdisk_device_disklabel} (  struct gnufdisk_device* @var{device}  )
+This function allows you to get the partition table on the device @var{device}.
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EDEVICEPOINTER
+@item GNUFDISK_DEVICE_EDEVICE
+@item GNUFDISK_DEVICE_ENOTSUP
+@item GNUFDISK_DEVICE_ENOTOPEN
+@item GNUFDISK_DEVICE_EDISKLABELSYSTEM
+@end table
+@end quotation
+@end deftypefun
+
+@deftypefun {struct gnufdisk_disklabel*} {gnufdisk_device_create_disklabel} (  struct gnufdisk_device* @var{device}, struct gnufdisk_string* @var{system}  )
+This function allows you to create a new partition table on @var{device}. The
+parameter @var{system} indicates the type of table you want to create.
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EDEVICEPOINTER
+@item GNUFDISK_DEVICE_EDEVICE
+@item GNUFDIKS_DEVICE_ENOTSUP
+@item GNUFDISK_COMMON_ENOMEM
+@item GNUFDISK_DEVICE_EDISKLABELSYSTEMPOINTER
+@item GNUFDISK_DEVICE_EDISKLABELSYSTEM
+@item GNUFDISK_DEVICE_ENOTOPEN
+@end table
+@end quotation
+@end deftypefun
+
+@deftypefun {void} {gnufdisk_device_set_parameter} (  struct gnufdisk_device* @var{device}, struct gnufdisk_string* @var{parameter}, const void* @var{data}, size_t @var{size}  )
+This function allows you to set a specific parameter on @var{device}. 
+@var{parameter} is the name of the parameter that you want to set. The
+parameter @var{data} is the value that you want to set. The parameter @var{size}
+indicates the size of @var{data}.
+
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EDEVICEPOINTER
+@item GNUFDISK_DEVICE_EDEVICE
+@item GNUFDISK_DEVICE_EPARAMETERPOINTER
+@item GNUFDISK_DEVICE_EPARAMETER
+@item GNUFDISK_DEVICE_EPARAMETERDATA
+@item GNUFDISK_DEVICE_ENOTSUP
+@item GNUFDISK_DEVICE_ENOTOPEN
+@end table
+@end quotation
+@end deftypefun
+
+@deftypefun {void} {gnufdisk_device_get_parameter} (  struct gnufdisk_device* @var{device}, struct gnufdisk_string* @var{parameter}, void* @var{data}, size_t @var{size}  )
+This function allows you to read a specific parameter from @var{device}. 
+@var{parameter} is the name of the parameter you want to read. The
+parameter @var{data} is the buffer where the value will be written. The
+parameter @var{size}" indicates the size of @var{data} buffer.
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EDEVICEPOINTER
+@item GNUFDISK_DEVICE_EDEVICE
+@item GNUFDISK_DEVICE_EPARAMETERPOINTER
+@item GNUFDISK_DEVICE_EPARAMETER
+@item GNUFDISK_DEVICE_EPARAMETERDATA
+@item GNUFDISK_DEVICE_ENOTSUP
+@item GNUFDISK_DEVICE_ENOTOPEN
+@end table
+@end quotation
+@end deftypefun
+
+@deftypefun {void} {gnufdisk_device_commit} ( struct gnufdisk_device* @var{device} )
+Any changes made to devices remains in memory. With this function you can make the changes effective.
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EDEVICEPOINTER
+@item GNUFDISK_DEVICE_EDEVICE
+@item GNUFDISK_DEVICE_ENOTSUP
+@item GNUFDISK_DEVICE_ENOTOPEN
+@end table
+@end quotation
+@end deftypefun
+
+@deftypefun {void} {gnufdisk_device_close} (  struct gnufdisk_device* @var{device}  )
+This function closes the file associated with @var{device}. The changes
+are not made effective. If you want to write changes, you must
+call @code{gnufdisk_device_commit} before closing @var{device}.
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EDEVICEPOINTER
+@item GNUFDISK_DEVICE_EDEVICE
+@item GNUFDISK_DEVICE_ENOTSUP
+@item GNUFDISK_DEVICE_ENOTOPEN
+@end table
+@end quotation
+@end deftypefun
+
+@node Disklabels, Partitions, Devices, gnufdisk-device library
+@section Disklabels
+
+Partition tables are represented by the structure
+@code{struct gnufdisk_disklabel}. This structure is hidden, you can use it only
+through pointers. Also you can not implicitly create a variable of this
+type, you can only get it through a device. @xref{Devices}.
+
+Once you have a pointer of type @code{struct gnufdisk_disklabel}, you can perform
+operations using the following functions:
+
+@deftypefun {void} {gnufdisk_disklabel_delete} (  struct gnufdisk_disklabel *@var{disklabel}  )
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EDISKLABELPOINTER
+@item GNUFDISK_DEVICE_EDISKLABEL
+@end table
+@end quotation
+@end deftypefun
+
+@deftypefun {void} {gnufdisk_disklabel_ref} (  struct gnufdisk_disklabel *@var{disklabel}  )
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EDISKLABELPOINTER
+@item GNUFDISK_DEVICE_EDISKLABEL
+@end table
+@end quotation
+@end deftypefun
+
+@deftypefun {void} {gnufdisk_disklabel_raw} ( struct gnufdisk_disklabel *@var{disklabel}, @
+    void **@var{dest}, size_t * @var{size} )
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EDISKLABELPOINTER
+@item GNUFDISK_DEVICE_EDISKLABEL
+@end table
+@end quotation
+@end deftypefun
+
+@deftypefun {struct gnufdisk_string*} {gnufdisk_disklabel_system} (  struct gnufdisk_disklabel* @var{disklabel}  )
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EDISKLABELPOINTER
+@item GNUFDISK_DEVICE_EDISKLABEL
+@end table
+@end quotation
+@end deftypefun
+
+@deftypefun {struct gnufdisk_partition*} {gnufdisk_disklabel_partition} ( @
+    struct gnufdisk_disklabel* @var{disklabel}, size_t @var{number} )
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EDISKLABELPOINTER
+@item GNUFDISK_DEVICE_EDISKLABEL
+@end table
+@end quotation
+@end deftypefun
+
+@deftypefun {struct gnufdisk_partition*} {gnufdisk_disklabel_create_partition} ( @
+struct gnufdisk_disklabel* @var{disklabel}, struct gnufdisk_geometry* @var{start_range}, @
+struct gnufdisk_geometry* @var{end_range}, struct gnufdisk_string* @var{type} )
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EDISKLABELPOINTER
+@item GNUFDISK_DEVICE_EDISKLABEL
+@end table
+@end quotation
+@end deftypefun
+
+@deftypefun {void} {gnufdisk_disklabel_remove_partition} ( @
+    struct gnufdisk_disklabel* @var{disklabel}, size_t @var{number} )
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EDISKLABELPOINTER
+@item GNUFDISK_DEVICE_EDISKLABEL
+@end table
+@end quotation
+@end deftypefun
+
+@deftypefun {void} {gnufdisk_disklabel_set_parameter} ( @
+    struct gnufdisk_disklabel* @var{disklabel}, struct gnufdisk_string* @var{parameter}, @
+    const void* @var{data}, size_t @var{size} )
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EDISKLABELPOINTER
+@item GNUFDISK_DEVICE_EDISKLABEL
+@end table
+@end quotation
+@end deftypefun
+
+@deftypefun {void} {gnufdisk_disklabel_get_parameter} ( @
+    struct gnufdisk_disklabel* @var{disklabel}, struct gnufdisk_string* @var{parameter}, @
+    void* @var{data}, size_t @var{size} )
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EDISKLABELPOINTER
+@item GNUFDISK_DEVICE_EDISKLABEL
+@end table
+@end quotation
+@end deftypefun
+
+@node Partitions, gnufdisk-device example, Disklabels, gnufdisk-device library
+@section Partitions
+
+In this library partitions are represented by the structure
+@code{struct gnufdisk_partition}. This structure is hidden, you can use it only
+through pointers. Also you can not implicitly allocate variables of this
+type, you can only get them through a partition table. @xref{Disklabels}.
+
+When you have a variable of type @code{struct gnufdisk_partition}, 
+you can use the following functions to work on it:
+
+@deftypefun {void} {gnufdisk_partition_ref} (  struct gnufdisk_partition* @var{partition}  )
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EPARTITIONPOINTER
+@item GNUFDISK_DEVICE_EPARTITION
+@end table
+@end quotation
+@end deftypefun
+
+@deftypefun {void} {gnufdisk_partition_delete} (  struct gnufdisk_partition* @var{partition}  )
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EPARTITIONPOINTER
+@item GNUFDISK_DEVICE_EPARTITION
+@end table
+@end quotation
+@end deftypefun
+
+@deftypefun {void} {gnufdisk_partition_set_parameter} ( struct gnufdisk_partition* @var{partition} @
+struct gnufdisk_string* @var{parameter}, const void* @var{data}, size_t @var{size} )
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EPARTITIONPOINTER
+@item GNUFDISK_DEVICE_EPARTITION
+@end table
+@end quotation
+@end deftypefun
+
+@deftypefun {void} {gnufdisk_partition_get_parameter} ( struct gnufdisk_partition* @var{parameter}, @
+struct gnufdisk_string* @var{param}, void* @var{data}, size_t @var{size} )
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EPARTITIONPOINTER
+@item GNUFDISK_DEVICE_EPARTITION
+@end table
+@end quotation
+@end deftypefun
+
+@deftypefun {struct gnufdisk_string*} {gnufdisk_partition_type} (  struct gnufdisk_partition* @var{partition}  )
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EPARTITIONPOINTER
+@item GNUFDISK_DEVICE_EPARTITION
+@end table
+@end quotation
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_partition_number} (  struct gnufdisk_partition* @var{partition}  )
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EPARTITIONPOINTER
+@item GNUFDISK_DEVICE_EPARTITION
+@end table
+@end quotation
+@end deftypefun
+
+@deftypefun {gnufdisk_integer} {gnufdisk_partition_start} (  struct gnufdisk_partition* @var{partition}  )
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EPARTITIONPOINTER
+@item GNUFDISK_DEVICE_EPARTITION
+@end table
+@end quotation
+@end deftypefun
+
+@deftypefun {gnufdisk_integer} {gnufdisk_partition_length} (  struct gnufdisk_partition* @var{partition}  )
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EPARTITIONPOINTER
+@item GNUFDISK_DEVICE_EPARTITION
+@end table
+@end quotation
+@end deftypefun
+
+@deftypefun {void} {gnufdisk_partition_move} ( struct gnufdisk_partition* @var{partition}, @
+struct gnufdisk_geometry* @var{start_range} )
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EPARTITIONPOINTER
+@item GNUFDISK_DEVICE_EPARTITION
+@end table
+@end quotation
+@end deftypefun
+
+@deftypefun {void} {gnufdisk_partition_resize} ( struct gnufdisk_partition* @var{partition}, @
+struct gnufdisk_geometry* @var{end_range} )
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EPARTITIONPOINTER
+@item GNUFDISK_DEVICE_EPARTITION
+@end table
+@end quotation
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_partition_read} ( struct gnufdisk_partition* @var{partition}, @
+gnufdisk_integer @var{start}, void* @var{buf}, size_t @var{size} )
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EPARTITIONPOINTER
+@item GNUFDISK_DEVICE_EPARTITION
+@end table
+@end quotation
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_partition_write} ( struct gnufdisk_partition* @var{partition}, @
+gnufdisk_integer @var{sector}, const void* @var{buf}, size_t @var{size} )
+@quotation Exceptions
+@table @code
+@item GNUFDISK_DEVICE_EPARTITIONPOINTER
+@item GNUFDISK_DEVICE_EPARTITION
+@end table
+@end quotation
+@end deftypefun
+
+@node gnufdisk-device example,  , Partitions, gnufdisk-device library
+@section gnufdisk-device example
+In this section we will make a small example of how to use the library
+gnufdisk-device. Since we do not have a module, we create a basic as it
+only exports a few functions:
+
+@example
+@verbatim
+#include <stdio.h>
+#include <gnufdisk-device.h>
+#include <gnufdisk-device-internals.h>
+
+static void device_open(void *_dev, struct gnufdisk_string* _path)
+{
+  printf("open `%s' with device %p\n", 
+         gnufdisk_string_c_string(_path), _dev);
+}
+
+static void device_delete(void* _dev)
+{
+  printf("delete device %p\n", _dev);
+  free(_dev);
+}
+
+static struct gnufdisk_device_operations devop = {0};
+
+void module_register(struct gnufdisk_string * _options,
+                     struct gnufdisk_device_operations * _operations,
+                     void **_private_data)
+{
+  printf("register module `testmod'\n");
+
+
+  devop.open = &device_open;
+  devop.delete = &device_delete;
+
+  *_operations = devop;
+
+  *_private_data = malloc(16);
+}
+@end verbatim
+@end example
+
+Once the module is compiled, we can test its use. What follows is a piece of code that uses the module:
+
+@example
+@verbatim
+#include <stdio.h>
+
+#include <gnufdisk-exception.h>
+#include <gnufdisk-device.h>
+
+int main(int argc, char* argv[])
+{
+  struct gnufdisk_string* s;
+  struct gnufdisk_device* dev;
+
+  GNUFDISK_TRY(NULL, NULL)
+    {
+      s = gnufdisk_string_new("testmod");
+      dev = gnufdisk_device_new(s, NULL);
+
+      gnufdisk_string_set(s, "/dev/sda");
+      gnufdisk_device_open(dev, s);
+      sleep(1);
+
+      gnufdisk_device_delete(dev);
+      gnufdisk_string_delete(s);
+    }
+  GNUFDISK_CATCH_DEFAULT
+    {
+      printf("caught an exception from %s:%d: %s\n",
+             exception_info.file,
+             exception_info.line,
+             exception_info.message);
+    }
+  GNUFDISK_EXCEPTION_END;
+
+  return 0;
+}
+@end verbatim
+@end example
+
+@node gnufdisk-devicemanager library, gnufdisk-userinterface library, gnufdisk-device library, Top
+@chapter gnufdisk-devicemanager library
+
+@deftypefun {struct gnufdisk_devicemanager *} {gnufdisk_devicemanager_new} (  struct gnufdisk_userinterface *@var{ui}  )
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_devicemanager_ref} (  struct gnufdisk_devicemanager *@var{dm}  )
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_devicemanager_delete} (  struct gnufdisk_devicemanager *@var{dm}  )
+@end deftypefun
+
+@deftypefun {struct gnufdisk_geometry *} {gnufdisk_devicemanager_geometry_new} (  struct gnufdisk_devicemanager* @var{dm}, struct gnufdisk_device* @var{dev}  )
+@end deftypefun
+
+@deftypefun {struct gnufdisk_geometry *} {gnufdisk_devicemanager_geometry_duplicate} (  struct gnufdisk_devicemanager* @var{dm}, struct gnufdisk_geometry *@var{geom}  )
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_devicemanager_geometry_delete} (  struct gnufdisk_devicemanager* @var{dm}, struct gnufdisk_geometry* @var{geom}  )
+@end deftypefun
+
+@deftypefun {struct gnufdisk_geometry *} {gnufdisk_devicemanager_geometry_set} ( struct gnufdisk_devicemanager* @var{dm}, @
+struct gnufdisk_geometry* @var{geom}, gnufdisk_integer @var{start}, gnufdisk_integer @var{end} )
+@end deftypefun
+
+@deftypefun {gnufdisk_integer} {gnufdisk_devicemanager_geometry_start} ( struct gnufdisk_devicemanager* @var{dm}, struct gnufdisk_geometry* @var{geom}) 
+@end deftypefun
+
+@deftypefun {struct gnufdisk_chs} {gnufdisk_devicemanager_geometry_start_chs} ( struct gnufdisk_devicemanager* @var{dm}, @
+struct gnufdisk_geometry* @var{geom} )
+@end deftypefun
+
+@deftypefun {gnufdisk_integer} {gnufdisk_devicemanager_geometry_end} ( struct gnufdisk_devicemanager* @var{dm}, struct gnufdisk_geometry* @var{geom}  )
+@end deftypefun
+
+@deftypefun {struct gnufdisk_chs} {gnufdisk_devicemanager_geometry_end_chs} (  struct gnufdisk_devicemanager* @var{dm}, struct gnufdisk_geometry* @var{geom}  )
+@end deftypefun
+
+@deftypefun {gnufdisk_integer} {gnufdisk_devicemanager_geometry_length} (  struct gnufdisk_devicemanager* @var{dm}, struct gnufdisk_geometry* @var{geom}  )
+@end deftypefun
+
+@deftypefun {struct gnufdisk_chs} {gnufdisk_devicemanager_geometry_length_chs} (  struct gnufdisk_devicemanager* @var{dm}, struct gnufdisk_geometry* @var{geom}  )
+@end deftypefun
+
+@deftypefun {struct gnufdisk_device *} {gnufdisk_devicemanager_device_new} ( struct gnufdisk_devicemanager *@var{dm}, @
+struct gnufdisk_string *@var{module}, struct gnufdisk_string *@var{module_options} )
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_devicemanager_device_open} ( struct gnufdisk_devicemanager *@var{dm}, @
+struct gnufdisk_device *@var{dev}, struct gnufdisk_string *@var{path} )
+@end deftypefun
+
+@deftypefun {struct gnufdisk_disklabel *} {gnufdisk_devicemanager_device_disklabel} ( struct gnufdisk_devicemanager *@var{dm}, @
+struct gnufdisk_device *@var{dev} )
+@end deftypefun
+
+@deftypefun {struct gnufdisk_disklabel *} {gnufdisk_devicemanager_device_create_disklabel} ( struct gnufdisk_devicemanager *@var{dm}, @
+struct gnufdisk_device *@var{dev}, struct gnufdisk_string *@var{system} )
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_devicemanager_device_set_parameter} ( struct gnufdisk_devicemanager *@var{dm}, @
+struct gnufdisk_device *@var{dev}, struct gnufdisk_string *@var{param}, const void *@var{data}, size_t @var{size} )
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_devicemanager_device_get_parameter} ( struct gnufdisk_devicemanager *@var{dm}, @
+struct gnufdisk_device *@var{dev}, struct gnufdisk_string *@var{param}, void *@var{dest}, size_t @var{size} )
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_devicemanager_device_commit} (  struct gnufdisk_devicemanager *@var{dm}, struct gnufdisk_device *@var{dev}  )
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_devicemanager_device_close} (  struct gnufdisk_devicemanager *@var{dm}, struct gnufdisk_device *@var{dev}  )
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_devicemanager_device_delete} (  struct gnufdisk_devicemanager * @var{dm}, struct gnufdisk_device* @var{dev}  )
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_devicemanager_disklabel_raw} ( struct gnufdisk_devicemanager * @var{dm}, @
+struct gnufdisk_disklabel * @var{disk}, void **@var{dest}, size_t *@var{size} )
+@end deftypefun
+
+@deftypefun {struct gnufdisk_string *} {gnufdisk_devicemanager_disklabel_system} ( struct gnufdisk_devicemanager *@var{dm}, @
+struct gnufdisk_disklabel *@var{disk} )
+@end deftypefun
+
+@deftypefun {struct gnufdisk_partition *} {gnufdisk_devicemanager_disklabel_partition} ( struct gnufdisk_devicemanager *@var{dm}, @
+struct gnufdisk_disklabel *@var{disk}, size_t @var{number} )
+@end deftypefun
+
+@deftypefun {struct gnufdisk_partition *} {gnufdisk_devicemanager_disklabel_create_partition} ( struct gnufdisk_devicemanager *@var{dm}, @
+struct gnufdisk_disklabel *@var{disk}, struct gnufdisk_geometry *@var{start}, struct gnufdisk_geometry *@var{end}, struct gnufdisk_string *@var{type} )
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_devicemanager_disklabel_remove_partition} ( struct gnufdisk_devicemanager *@var{dm}, @
+struct gnufdisk_disklabel *@var{disk}, size_t @var{number} )
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_devicemanager_disklabel_set_parameter} ( struct gnufdisk_devicemanager *@var{dm}, @
+struct gnufdisk_disklabel *@var{disk}, struct gnufdisk_string *@var{param}, const void *@var{data}, size_t @var{size} )
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_devicemanager_disklabel_get_parameter} ( struct gnufdisk_devicemanager *@var{dm}, @
+struct gnufdisk_disklabel *@var{disk}, struct gnufdisk_string *@var{param}, void *@var{dest}, size_t @var{size} )
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_devicemanager_partition_set_parameter} ( struct gnufdisk_devicemanager *@var{dm}, @
+struct gnufdisk_partition *@var{part}, struct gnufdisk_string *@var{param}, const void *@var{data}, size_t @var{size} )
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_devicemanager_disklabel_delete} ( struct gnufdisk_devicemanager* @var{dm}, @
+struct gnufdisk_disklabel* @var{disk} )
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_devicemanager_partition_get_parameter} ( struct gnufdisk_devicemanager *@var{dm}, @
+struct gnufdisk_partition *@var{part}, struct gnufdisk_string *@var{param}, void *@var{dest}, size_t @var{size} )
+@end deftypefun
+
+@deftypefun {struct gnufdisk_string *} {gnufdisk_devicemanager_partition_type} ( struct gnufdisk_devicemanager *@var{dm}, @
+struct gnufdisk_partition *@var{part} )
+@end deftypefun
+
+@deftypefun {gnufdisk_integer} {gnufdisk_devicemanager_partition_start} ( struct gnufdisk_devicemanager* @var{dm}, @
+struct gnufdisk_partition *@var{part} )
+@end deftypefun
+
+@deftypefun {gnufdisk_integer} {gnufdisk_devicemanager_partition_length} ( struct gnufdisk_devicemanager* @var{dm}, @
+struct gnufdisk_partition *@var{part} )
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_devicemanager_partition_number} ( struct gnufdisk_devicemanager *@var{dm}, @
+struct gnufdisk_partition *@var{part} )
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_devicemanager_partition_move} ( struct gnufdisk_devicemanager *@var{dm}, @
+struct gnufdisk_partition *@var{part}, struct gnufdisk_geometry *@var{range} )
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_devicemanager_partition_resize} ( struct gnufdisk_devicemanager *@var{dm}, @
+struct gnufdisk_partition *@var{part}, struct gnufdisk_geometry *@var{range} )
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_devicemanager_partition_read} ( struct gnufdisk_devicemanager *@var{dm}, @
+struct gnufdisk_partition *@var{part}, gnufdisk_integer @var{start}, void *@var{buf}, size_t @var{size}) 
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_devicemanager_partition_write} ( struct gnufdisk_devicemanager *@var{dm}, @
+struct gnufdisk_partition *@var{part}, gnufdisk_integer @var{start}, const void *@var{buf}, size_t @var{size} )
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_devicemanager_partition_delete} ( struct gnufdisk_devicemanager* @var{dm}, @
+struct gnufdisk_partition* @var{part} )
+@end deftypefun
+
+@node gnufdisk-userinterface library, Scheme shell, gnufdisk-devicemanager library, Top
+@chapter gnufdisk-userinterface library
+
+@deftypefun {struct gnufdisk_userinterface*} {gnufdisk_userinterface_new} (  void  )
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_userinterface_ref} (  struct gnufdisk_userinterface* @var{ui}  )
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_userinterface_delete} (  struct gnufdisk_userinterface* @var{ui}  )
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_userinterface_run} ( struct gnufdisk_userinterface* @var{ui}, @
+struct gnufdisk_string* @var{implementation}, int @var{argc}, char **@var{argv} )
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_userinterface_print} ( struct gnufdisk_userinterface* @var{ui}, @
+const char* @var{format}, @var{...} )
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_userinterface_yes_no} ( struct gnufdisk_userinterface* @var{ui}, @
+const char * @var{format}, @var{...} )
+@end deftypefun
+
+@deftypefun {struct gnufdisk_string*} {gnufdisk_userinterface_get_path} ( struct gnufdisk_userinterface* @var{ui}, @
+const char *@var{format}, @var{...} )
+@end deftypefun
+
+@deftypefun {struct gnufdisk_string*} {gnufdisk_userinterface_get_disklabel_system} ( struct gnufdisk_userinterface* @var{ui}, @
+const char* @var{format}, @var{...} )
+@end deftypefun
+
+@deftypefun {int} {gnufdisk_userinterface_get_geometry} ( struct gnufdisk_userinterface* @var{ui}, @
+struct gnufdisk_devicemanager* @var{dm}, struct gnufdisk_geometry* @var{geom}, const char* @var{format}, @var{...} )
+@end deftypefun
+
+@deftypefun {struct gnufdisk_string*} {gnufdisk_userinterface_get_partition_type} ( struct gnufdisk_userinterface* @var{ui}, @
+const char* @var{format}, @var{...} )
+@end deftypefun
+
+@node Scheme shell, Backend API, gnufdisk-userinterface library, Top
+@chapter Scheme shell
+
+To run gnufdisk in @i{shell} mode:
+@example
+@verbatim
+~$ gnufdisk shell
+guile>
+@end verbatim
+@end example
+
+In shell mode you can use all symbols, plus the @code{gnufdisk-help}
+@defvar *userinterface*
+@end defvar
+
+@defvar *command-line*
+@end defvar
+
+@defun gnufdisk-help
+@end defun
+
+@defun gnufdisk-make-geometry @var{devicemanager}
+@end defun
+
+@defun gnufdisk-geometry? @var{geometry}
+@end defun
+
+@defun gnufdisk-geometry-set @var{geometry} @var{start} @var{length}
+@end defun
+
+@defun gnufdisk-geometry-start @var{geometry}
+@end defun
+
+@defun gnufdisk-geometry-end @var{geometry}
+@end defun
+
+@defun gnufdisk-geometry-length @var{geometry}
+@end defun
+
+@defun gnufdisk-make-devicemanager @var{userinterface}
+@end defun
+
+@defun gnufdisk-devicemanager? @var{devicemanager}
+@end defun
+
+@defun gnufdisk-devicemanager-make-device @var{devicemanager} @var{module} @var{options}
+This procedure allows you to create a new device. The parameter
+@var{devicemanager} is the manager to create this device (created with 
+@code{gnufdisk-make-devicemanager}). The parameter @var{module} is a string 
+with the name of the module (backend) you want to use. @var{options} is 
+a string of options to pass to the backend.
+@end defun
+
+@defun gnufdisk-device? @var{device}
+@end defun
+
+@defun gnufdisk-device-open @var{device} @var{path}
+@end defun
+
+@defun gnufdisk-device-disklabel @var{device}
+@end defun
+
+@defun gnufdisk-device-create-disklabel @var{device} @var{system}
+@end defun
+
+@defun gnufdisk-device-set-parameter @var{device} @var{name} @var{value}
+@end defun
+
+@defun gnufdisk-device-get-parameter @var{device} @var{name} @var{type}
+@quotation Types
+@table @code
+@item 'INT
+@item 'INTEGER
+@item 'STR
+@item 'STRING
+@end table
+@end quotation
+@end defun
+
+@defun gnufdisk-device-commit @var{device}
+@end defun
+
+@defun gnufdisk-device-close @var{device}
+@end defun
+
+@defun gnufdisk-disklabel? @var{disklabel}
+@end defun
+
+@defun gnufdisk-disklabel-raw @var{disklabel}
+@end defun
+
+@defun gnufdisk-disklabel-system @var{disklabel}
+@end defun
+
+@defun gnufdisk-disklabel-partition @var{disklabel} @var{number}
+@end defun
+
+@defun gnufdisk-disklabel-create-partition @var{disklabel} @var{start-range} @var{end-range} @var{system}
+@end defun
+
+@defun gnufdisk-disklabel-remove-partition @var{disklabel} @var{number}
+@end defun
+
+@defun gnufdisk-disklabel-set-parameter @var{disklabel} @var{name} @var{value}
+@end defun
+
+@defun gnufdisk-disklabel-get-parameter @var{disklabel} @var{name} @var{type}
+@quotation Types
+@table @code
+@item 'INT
+@item 'INTEGER
+@item 'STR
+@item 'STRING
+@end table
+@end quotation
+@end defun
+
+@defun gnufdisk-partition? @var{partition}
+@end defun
+
+@defun gnufdisk-partition-set-parameter @var{partition} @var{name} @var{value}
+@end defun
+
+@defun gnufdisk-partition-get-parameter @var{partition} @var{name} @var{type}
+@quotation Types
+@table @code
+@item 'INT
+@item 'INTEGER
+@item 'STR
+@item 'STRING
+@end table
+@end quotation
+@end defun
+
+@defun gnufdisk-partition-type @var{partition}
+@end defun
+
+@defun gnufdisk-partition-geometry @var{partition} @var{device}
+@end defun
+
+@defun gnufdisk-partition-number @var{partition}
+@end defun
+
+@defun gnufdisk-partition-move @var{partition} @var{start-range}
+@end defun
+
+@defun gnufdisk-partition-resize @var{partition} @var{end-range}
+@end defun
+
+@defun gnufdisk-partition-read @var{partition} @var{start-sector} @var{size}
+@end defun
+
+@defun gnufdisk-partition-write @var{partition} @var{start-sector} @var{raw-data}
+@end defun
+
+@defun gnufdisk-raw? @var{raw-data}
+@end defun
+
+@defun gnufdisk-userinterface-set-hook @var{userinterface} @var{name} @var{procedure}
+
+@quotation Hooks:
+@defun print @var{message}
+@end defun
+@defun error @var{message}
+@end defun
+
+@defun yes-no @var{message}
+@end defun
+
+@defun get-path @var{message}
+@end defun
+
+@defun get-disklabel-system @var{message}
+@end defun
+
+@defun get-geometry @var{message} @var{geom}
+@end defun
+
+@defun get-partition-system @var{message}
+@end defun
+@end quotation
+
+@end defun
+
+@node Backend API, Functions index, Scheme shell, Top
+@chapter Backend API
+
+@menu
+* Backend example::             
+@end menu
+
+@deftp Type {struct gnufdisk_device_operations}
+@verbatim
+struct gnufdisk_device_operations
+{
+  void (*open)(void*, struct gnufdisk_string*);
+  void (*disklabel)(void*, 
+                    struct gnufdisk_disklabel_operations*, 
+                    void**);
+  void (*create_disklabel)(void*, 
+                           struct gnufdisk_string*, 
+                           struct gnufdisk_disklabel_operations*, 
+                           void**);
+  void (*set_parameter)(void*, 
+                        struct gnufdisk_string*, 
+                        const void*, 
+                        size_t);
+  void (*get_parameter)(void*, 
+                        struct gnufdisk_string*, 
+                        void*, 
+                        size_t);
+  void (*commit)(void*);
+  void (*close)(void*);
+  void (*delete)(void*);
+};
+@end verbatim
+@end deftp
+
+@deftp Type {struct gnufdisk_disklabel_operations}
+@verbatim
+struct gnufdisk_disklabel_operations
+{
+  void (*raw)(void*, void**, size_t*);
+  struct gnufdisk_string* (*system)(void*);
+  void (*partition)(void*, 
+                    size_t, 
+                    struct gnufdisk_partition_operations*, 
+                    void**);
+  void (*create_partition)(void*, 
+                           struct gnufdisk_geometry*,
+                           struct gnufdisk_geometry*,
+                           struct gnufdisk_string*,
+                           struct gnufdisk_partition_operations*,
+                           void**);
+  void (*remove_partition)(void*, size_t);
+  void (*set_parameter)(void*,
+                        struct gnufdisk_string*,
+                        const void*,
+                        size_t);
+  void (*get_parameter)(void*, 
+                        struct gnufdisk_string*,
+                        void*,
+                        size_t);
+  void (*delete)(void*);
+};
+@end verbatim
+@end deftp
+
+@deftp Type {struct gnufdisk_partition_operations}
+@verbatim
+struct gnufdisk_partition_operations 
+{
+  void (*set_parameter)(void*, 
+                        struct gnufdisk_string*,
+                        const void*, 
+                        size_t);
+  void (*get_parameter)(void*, 
+                        struct gnufdisk_string*,
+                        void*, 
+                        size_t);
+  struct gnufdisk_string* (*type)(void*);
+  gnufdisk_integer (*start)(void*);
+  gnufdisk_integer (*length)(void*);
+  int (*number)(void*);
+  void (*move)(void*, struct gnufdisk_geometry*);
+  void (*resize)(void*, struct gnufdisk_geometry*);
+  int (*read)(void*, 
+              gnufdisk_integer, 
+              void*, 
+              size_t);
+  int (*write)(void*, 
+               gnufdisk_integer, 
+               const void*, 
+               size_t _size);
+  void (*delete)(void*);
+};
+@end verbatim
+@end deftp
+
+@deftypefun {int} {register_module} (  struct gnufdisk_device_operations* @var{devops}, void **@var{pdata}  )
+@end deftypefun
+
+@node Backend example,  , Backend API, Backend API
+@section Backend example
+@example
+@verbatim
+#include <stdlib.h>
+#include <string.h>
+
+#include <gnufdisk-debug.h>
+#include <gnufdisk-exception.h>
+#include <gnufdisk-device-internals.h>
+
+#define INFO (getenv("SAMPLE_BACKEND") != NULL)
+
+static size_t ndev = 0;
+static size_t ndisk = 0;
+static size_t npart = 0;
+
+static void
+partition_set_parameter (void *_data,
+			 struct gnufdisk_string *_name,
+			 const void *_pdata, size_t _psize)
+{
+  GNUFDISK_LOG ((INFO,
+		 "partition_set_parameter(%s, %p, %p, %u)",
+		 _data, _name, _pdata, _psize));
+}
+
+static void
+partition_get_parameter (void *_data,
+			 struct gnufdisk_string *_name,
+			 void *_pdata, size_t _psize)
+{
+  GNUFDISK_LOG ((INFO,
+		 "partition_get_parameter(%s, %p, %p, %u)",
+		 _data, _name, _pdata, _psize));
+}
+
+static struct gnufdisk_string *
+partition_type (void *_data)
+{
+  struct gnufdisk_string *s;
+
+  GNUFDISK_LOG ((INFO, "partition_type(%s)", _data));
+
+  if ((s = gnufdisk_string_new ("undefined")) == NULL)
+    GNUFDISK_THROW (0, NULL, GNUFDISK_DEVICE_ENOMEM, NULL,
+		    "can not allocate memory");
+
+  return s;
+}
+
+static gnufdisk_integer
+partition_start (void *_data)
+{
+  GNUFDISK_LOG ((INFO, "partition_start(%s)", _data));
+  return 0xffff;
+}
+
+static gnufdisk_integer
+partition_end (void *_data)
+{
+  GNUFDISK_LOG ((INFO, "partition_end(%s)", _data));
+  return 0xffff;
+}
+
+static int
+partition_number (void *_data)
+{
+  GNUFDISK_LOG ((INFO, "partition_number(%s)", _data));
+  return 0x45;
+}
+
+static void
+partition_move (void *_data, struct gnufdisk_geometry *_s)
+{
+  GNUFDISK_LOG ((INFO, "partition_move(%s, %p)", _data, _s));
+}
+
+static void
+partition_resize (void *_data, struct gnufdisk_geometry *_e)
+{
+  GNUFDISK_LOG ((INFO, "partition_resize(%s, %p)", _data, _e));
+}
+
+static int
+partition_read (void *_data, gnufdisk_integer _sector, void *_dest,
+		size_t _size)
+{
+  GNUFDISK_LOG ((INFO, "partition_read(%s, %lld, %p, %u)", 
+        _data, _sector, _dest, _size));
+  return _size;
+}
+
+static int
+partition_write (void *_data, gnufdisk_integer _sector, 
+    const void *_src, size_t _size)
+{
+  GNUFDISK_LOG ((INFO, "partition_write(%s, %lld, %p, %u)",
+        _data, _sector, _src, _size));
+}
+
+static void
+partition_delete (void *_data)
+{
+  GNUFDISK_LOG ((INFO, "partition_delete(%s)", _data));
+  free(_data);
+}
+
+static struct gnufdisk_partition_operations partition_operations = {
+  &partition_set_parameter,
+  &partition_get_parameter,
+  &partition_type,
+  &partition_start,
+  &partition_end,
+  &partition_number,
+  &partition_move,
+  &partition_resize,
+  &partition_read,
+  &partition_write,
+  &partition_delete
+};
+
+
+static void
+disklabel_raw (void *_data, void **_dest, size_t * _size)
+{
+  GNUFDISK_LOG ((INFO, "disklabel_raw(%s, %p, %p)", 
+        _data, _dest, _size));
+
+  if ((*_dest = malloc (512)) == NULL)
+    GNUFDISK_THROW (0, NULL, GNUFDISK_DEVICE_ENOMEM, NULL,
+		    "can not allocate memory");
+
+  *_size = 512;
+}
+
+static struct gnufdisk_string *
+disklabel_system (void *_data)
+{
+  struct gnufdisk_string *s;
+
+  GNUFDISK_LOG ((INFO, "disklabel_system(%s)", _data));
+
+  if ((s = gnufdisk_string_new ("BSD")) == NULL)
+    GNUFDISK_THROW (0, NULL, GNUFDISK_DEVICE_ENOMEM, NULL,
+		    "can not allocate memory");
+
+  return s;
+}
+
+static void
+disklabel_partition (void *_data, size_t _n,
+		     struct gnufdisk_partition_operations *_operations,
+		     void **_specific)
+{
+  char buf[64];
+
+  GNUFDISK_LOG ((INFO, "disklabel_partition(%s, %u, %p, %p)", 
+        _data, _n, _operations, _specific));
+
+  memcpy (_operations, &partition_operations, 
+      sizeof (partition_operations));
+  
+  npart++;
+
+  snprintf(buf, sizeof(buf), "PARTITION %u", npart);
+
+  *_specific = strdup(buf);
+}
+
+static void
+disklabel_create_partition (void *_data,
+			    struct gnufdisk_geometry *_s,
+			    struct gnufdisk_geometry *_e,
+			    struct gnufdisk_string *_type,
+			    struct gnufdisk_partition_operations 
+            *_operations,
+			    void **_specific)
+{
+  char buf[64];
+
+  GNUFDISK_LOG ((INFO,
+		 "disklabel_create_partition(%s, %p, %p, %p, %p, %p)",
+		 _data, _s, _e, _type, _operations, _specific));
+
+  memcpy (_operations, 
+      &partition_operations, sizeof (partition_operations));
+
+  npart++;
+
+  snprintf(buf, sizeof(buf), "PARTITION %u", npart);
+  *_specific = strdup(buf);
+}
+
+static void
+disklabel_remove_partition (void *_data, size_t _n)
+{
+  GNUFDISK_LOG ((INFO, 
+        "disklabel_remove_partition(%s, %u)", _data, _n));
+}
+
+static void
+disklabel_set_parameter (void *_data, struct gnufdisk_string *_name,
+			 const void *_pdata, size_t _psize)
+{
+  GNUFDISK_LOG ((INFO, 
+        "disklabel_set_parameter(%s, %p, %p, %u)", _data,
+		    _name, _pdata, _psize));
+}
+
+static void
+disklabel_get_parameter (void *_data, struct gnufdisk_string *_name,
+			 void *_pdata, size_t _psize)
+{
+  GNUFDISK_LOG ((INFO, "disklabel_get_parameter(%s, %p, %p, %u)", _data,
+		 _name, _pdata, _psize));
+}
+
+static void
+disklabel_delete (void *_data)
+{
+  GNUFDISK_LOG ((INFO, "disklabel_delete(%s)", _data));
+  free(_data);
+}
+
+static struct gnufdisk_disklabel_operations disklabel_operations = {
+  &disklabel_raw,
+  &disklabel_system,
+  &disklabel_partition,
+  &disklabel_create_partition,
+  &disklabel_remove_partition,
+  &disklabel_set_parameter,
+  &disklabel_get_parameter,
+  &disklabel_delete
+};
+
+
+static void
+device_open (void *_data, struct gnufdisk_string *_path)
+{
+  GNUFDISK_LOG ((INFO, "device_open(%s, %p)", _data, _path));
+}
+
+static void
+device_disklabel (void *_data,
+		  struct gnufdisk_disklabel_operations *_operations,
+		  void **_specific)
+{
+  char buf[64];
+
+  GNUFDISK_LOG ((INFO, "device_disklabel(%s, %p, %p)", 
+        _data, _operations, _specific));
+
+  memcpy (_operations, 
+      &disklabel_operations, sizeof (disklabel_operations));
+
+  ndisk++;
+
+  snprintf(buf, sizeof(buf), "DISKLABEL %u", ndisk);
+
+  *_specific = strdup(buf);
+}
+
+static void
+device_create_disklabel (void *_data, struct gnufdisk_string *_type,
+  struct gnufdisk_disklabel_operations *_operations, void **_specific)
+{
+  char buf[64];
+
+  GNUFDISK_LOG ((INFO, "device_create_disklabel(%s, %p, %p, %p)", 
+        _data, _type, _operations, _specific));
+  
+  memcpy (_operations, 
+    &disklabel_operations, sizeof (disklabel_operations));
+  
+  ndisk++;
+
+  snprintf(buf, sizeof(buf), "DISKLABEL %u", ndisk);
+
+  *_specific = strdup(buf);
+}
+
+static void
+device_set_parameter (void *_data, struct gnufdisk_string *_parameter,
+		      const void *_pdata, size_t _psize)
+{
+  GNUFDISK_LOG ((INFO, "device_set_parameter(%s, %p, %p, %u)", _data,
+		 _parameter, _pdata, _psize));
+}
+
+static void
+device_get_parameter (void *_data, struct gnufdisk_string *_parameter,
+		      void *_pdata, size_t _psize)
+{
+  char *param;
+
+  GNUFDISK_LOG ((INFO, "device_get_parameter(%s, %p, %p, %u)", _data,
+		 _parameter, _pdata, _psize));
+
+  if ((param = gnufdisk_string_c_string_dup (_parameter)) == NULL)
+    GNUFDISK_THROW (0, NULL, GNUFDISK_DEVICE_ENOMEM, NULL,
+		    "can not allocate memory");
+
+  gnufdisk_exception_register_unwind_handler (&free, param);
+
+  if (strcmp (param, "SECTORS-PER-TRACK") == 0)
+    {
+      if (_psize != sizeof (gnufdisk_integer))
+	GNUFDISK_THROW (0, NULL, GNUFDISK_DEVICE_EPARAMETERSIZE, NULL,
+			"unexpected parameter size: %u", _psize);
+
+      *((gnufdisk_integer *) _pdata) = 0xff;
+    }
+  else if (strcmp (param, "HEADS-PER-CYLINDER") == 0)
+    {
+      if (_psize != sizeof (gnufdisk_integer))
+	GNUFDISK_THROW (0, NULL, GNUFDISK_DEVICE_EPARAMETERSIZE, NULL,
+			"unexpected parameter size: %u", _psize);
+
+      *((gnufdisk_integer *) _pdata) = 0x02;
+    }
+  else
+    GNUFDISK_THROW (0, NULL, GNUFDISK_DEVICE_EPARAMETER, NULL,
+		    "parameter `%s' is not supported", param);
+
+  free (param);
+}
+
+static void
+device_commit (void *_data)
+{
+  GNUFDISK_LOG ((INFO, "device_commit(%s)", _data));
+}
+
+static void
+device_close (void *_data)
+{
+  GNUFDISK_LOG ((INFO, "device_close(%s)", _data));
+}
+
+static void
+device_delete (void *_data)
+{
+  GNUFDISK_LOG ((INFO, "device_delete(%s)", _data));
+  free(_data);
+}
+
+static struct gnufdisk_device_operations device_operations = {
+  &device_open,
+  &device_disklabel,
+  &device_create_disklabel,
+  &device_set_parameter,
+  &device_get_parameter,
+  &device_commit,
+  &device_close,
+  &device_delete
+};
+
+void
+module_register (struct gnufdisk_string *_options,
+		 struct gnufdisk_device_operations *_operations,
+		 void **_pdata)
+{
+  char buf[64];
+
+  GNUFDISK_LOG ((INFO, "register_module(%p, %p, %p)", 
+    _options, _operations, _pdata));
+
+  memcpy (_operations, 
+    &device_operations, sizeof (device_operations));
+  
+  ndev++;
+
+  snprintf(buf, sizeof(buf), "DEVICE %u", ndev);
+  *_pdata = strdup(buf);
+}
+@end verbatim
+@end example
+@node Functions index, Type index, Backend API, Top
+@appendix Functions index
+@printindex fn
+
+@node Type index, Variable index, Functions index, Top
+@appendix Type index
+@printindex tp
+
+@node Variable index,  , Type index, Top
+@appendix Variable index
+@printindex vr
+
+@bye
+
