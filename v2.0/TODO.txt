@@ -1,0 +1,10 @@
+TODO
+===============
+
+	1) work on boot sector - Make it use GPT disks
+
+	2) add parted/fdisk/gdisk to install method
+
+	3) have games run as selectable .rom or .iso pkgs
+
+	4) package as a sandboxed(flatpack or snappack)
