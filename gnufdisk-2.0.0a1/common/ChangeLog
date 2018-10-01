@@ -1,0 +1,2 @@
+2010/03/06 Christian
+	* exception.c: gnufdisk_exception_push clear exception data.
