@@ -1,4 +1,4 @@
-TODO
+TODO for V2.0
 ===============
 
 	1) work on boot sector - Make it use GPT disks
